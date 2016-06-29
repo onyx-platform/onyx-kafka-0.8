@@ -1,5 +1,5 @@
 (ns onyx.plugin.kafka
-  (:require [clojure.core.async :refer [chan >!! <!! close! timeout alts!! sliding-buffer]]
+  (:require [clojure.core.async :refer [chan >!! <!! close! timeout alts!! sliding-buffer poll!]]
             [clj-kafka.new.producer :as kp]
             [clj-kafka.zk :as kzk]
             [clj-kafka.consumer.simple :as kc]
@@ -155,7 +155,8 @@
         partitions (kzk/partitions m (:kafka/topic task-map))
         n-partitions (count partitions)
         _ (check-num-peers-equals-partitions task-map n-partitions)
-        ch (:read-ch pipeline)
+        read-ch (:read-ch pipeline)
+        retry-ch (:retry-ch pipeline)
         pending-messages (:pending-messages pipeline)
         pending-commits (:pending-commits pipeline)
         job-id (:onyx.core/job-id event)
@@ -163,11 +164,12 @@
         task-id (:onyx.core/task-id event)
         reader-fut (future (reader-loop m client-id group-id topic partition partitions task-map 
                                         (:onyx.core/replica event) job-id peer-id task-id
-                                        ch pending-commits))
+                                        read-ch pending-commits))
         done-unsupported? (and (> (count partitions) 1)
                                (not (:kafka/partition task-map)))]
 
-    {:kafka/read-ch ch
+    {:kafka/read-ch read-ch
+     :kafka/retry-ch retry-ch
      :kafka/reader-future reader-fut
      :kafka/pending-messages pending-messages
      :kafka/pending-commits pending-commits
@@ -179,7 +181,7 @@
 
 (defrecord KafkaReadMessages
     [max-pending batch-size batch-timeout pending-messages
-     pending-commits drained? read-ch]
+     pending-commits drained? read-ch retry-ch]
   p-ext/Pipeline
   (write-batch
     [this event]
@@ -193,7 +195,7 @@
                   (<!! timeout-ch)
                   (->> (range max-segments)
                        (map (fn [_]
-                              (let [result (first (alts!! [read-ch timeout-ch] :priority true))]
+                              (let [result (first (alts!! [retry-ch read-ch timeout-ch] :priority true))]
                                 (if (= (:message result) :done)
                                   (t/input (random-uuid) :done)
                                   result))))
@@ -224,7 +226,7 @@
   (retry-segment
     [_ _ segment-id]
     (when-let [msg (get @pending-messages segment-id)]
-      (>!! read-ch (t/input (random-uuid) (:message msg)))
+      (>!! retry-ch (t/input (random-uuid) (:message msg)))
       (swap! pending-messages dissoc segment-id)))
 
   (pending?
@@ -242,18 +244,22 @@
         batch-timeout (arg-or-default :onyx/batch-timeout catalog-entry)
         chan-capacity (or (:kafka/chan-capacity catalog-entry) (:kafka/chan-capacity defaults))
         m {"zookeeper.connect" (:kafka/zookeeper catalog-entry)}
-        ch (chan chan-capacity)
+        read-ch (chan chan-capacity)
+        retry-ch (chan (* 2 max-pending))
         pending-messages (atom {})
         pending-commits (atom (sorted-set))
         drained? (atom false)]
     (->KafkaReadMessages
      max-pending batch-size batch-timeout
-     pending-messages pending-commits drained? ch)))
+     pending-messages pending-commits drained? read-ch retry-ch)))
 
 (defn close-read-messages
-  [{:keys [kafka/read-ch] :as pipeline} lifecycle]
+  [{:keys [kafka/read-ch kafka/retry-ch] :as pipeline} lifecycle]
   (future-cancel (:kafka/reader-future pipeline))
   (close! read-ch)
+  (close! retry-ch)
+  (while (poll! read-ch))
+  (while (poll! retry-ch))
   {})
 
 (defn inject-write-messages
