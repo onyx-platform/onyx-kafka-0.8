@@ -1,13 +1,14 @@
-## onyx-kafka
+## onyx-kafka-0.8
 
-Onyx plugin providing read and write facilities for Kafka. This plugin automatically discovers broker locations from ZooKeeper and updates the consumers when there is a broker failover.
+Onyx plugin providing read and write facilities for Kafka 0.8. This plugin will be kept in maintainence mode for the time being.
+This plugin automatically discovers broker locations from ZooKeeper and updates the consumers when there is a broker failover.
 
 #### Installation
 
 In your project file:
 
 ```clojure
-[org.onyxplatform/onyx-kafka "0.9.6.1-SNAPSHOT"]
+[org.onyxplatform/onyx-kafka-0.8 "0.9.6.1-SNAPSHOT"]
 ```
 
 In your peer boot-up namespace:
