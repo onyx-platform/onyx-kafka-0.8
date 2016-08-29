@@ -11,7 +11,7 @@
             [onyx.static.uuid :refer [random-uuid]]
             [onyx.peer.pipeline-extensions :as p-ext]
             [onyx.peer.function :as function]
-            [onyx.peer.operation :refer [kw->fn]]
+            [onyx.static.util :refer [kw->fn]]
             [taoensso.timbre :as log :refer [fatal info]])
   (:import [clj_kafka.core KafkaMessage]))
 
