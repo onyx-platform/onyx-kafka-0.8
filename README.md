@@ -8,7 +8,7 @@ This plugin automatically discovers broker locations from ZooKeeper and updates 
 In your project file:
 
 ```clojure
-[org.onyxplatform/onyx-kafka-0.8 "0.9.12.0"]
+[org.onyxplatform/onyx-kafka-0.8 "0.9.13.0"]
 ```
 
 In your peer boot-up namespace:
